@@ -52,6 +52,7 @@ import com.github.zly2006.zhihu.navigation.PaginationInfoNavigator
 import com.github.zly2006.zhihu.navigation.QuestionAnswerNavigator
 import com.github.zly2006.zhihu.platform.UserMessageSink
 import com.github.zly2006.zhihu.platform.isAigcVoteSupported
+import com.github.zly2006.zhihu.translation.TranslationClient
 import com.github.zly2006.zhihu.util.ArticleExportComment
 import com.github.zly2006.zhihu.util.Log
 import com.github.zly2006.zhihu.util.ZhidaSummarySsePayload
@@ -118,6 +119,39 @@ class ArticleViewModel(
     var authorAvatarSrc by mutableStateOf("")
     var authorBadge by mutableStateOf<OfficialBadge?>(null)
     var content by mutableStateOf("")
+    var translatedArticle by mutableStateOf<com.github.zly2006.zhihu.translation.TranslatedArticle?>(null)
+        private set
+    var translationMode by mutableStateOf<com.github.zly2006.zhihu.translation.TranslationMode?>(null)
+        private set
+    var translationLoading by mutableStateOf(false)
+        private set
+    var translationEngine by mutableStateOf(com.github.zly2006.zhihu.translation.TranslationEngine.Microsoft)
+        private set
+
+    val displayTitle: String
+        get() = when (val mode = translationMode) {
+            null -> title
+            else -> translatedArticle?.let {
+                when (mode) {
+                    com.github.zly2006.zhihu.translation.TranslationMode.Bilingual -> {
+                        if (it.title.isNotBlank() && it.title != title) "$title (${it.title})" else title
+                    }
+                    com.github.zly2006.zhihu.translation.TranslationMode.TranslationOnly -> {
+                        it.title.ifBlank { title }
+                    }
+                }
+            } ?: title
+        }
+
+    val displayContent: String
+        get() = if (translationMode != null) {
+            translatedArticle?.displayContent ?: content
+        } else {
+            content
+        }
+
+    val translatedContent: String?
+        get() = if (translationMode != null) translatedArticle?.displayContent else null
     var attachment by mutableStateOf<JsonElement?>(null)
     var voteUpCount by mutableIntStateOf(0)
     var commentCount by mutableIntStateOf(0)
@@ -192,10 +226,66 @@ class ArticleViewModel(
     private val openedAtEpochSeconds = Clock.System.now().epochSeconds
     private var aiSummaryJob: Job? = null
     private var exportSourceContent: DataHolder.Content? = null
+    private var translationJob: Job? = null
 
     // scroll fix
     var rememberedScrollY by mutableIntStateOf(0)
     var rememberedScrollYSync = true
+
+    fun setTranslationMode(
+        mode: com.github.zly2006.zhihu.translation.TranslationMode?,
+        engine: com.github.zly2006.zhihu.translation.TranslationEngine = translationEngine,
+        openAiConfig: com.github.zly2006.zhihu.translation.OpenAiTranslationConfig? = null,
+    ) {
+        if (mode == null) {
+            translationMode = null
+            return
+        }
+        val currentCached = translatedArticle
+        if (currentCached != null && currentCached.mode == mode && currentCached.engine == engine && currentCached.originalContent == content) {
+            translationMode = mode
+            translationEngine = engine
+            return
+        }
+        val client = httpClient ?: run {
+            userMessages.showShortMessage("当前平台不支持翻译")
+            return
+        }
+        if (content.isBlank() || translationLoading) return
+        translationMode = mode
+        translationEngine = engine
+        translationLoading = true
+        translationJob?.cancel()
+        translationJob = viewModelScope.launch {
+            try {
+                translatedArticle = com.github.zly2006.zhihu.translation.TranslationClient(client).translateArticle(
+                    title = title,
+                    html = content,
+                    engine = engine,
+                    mode = mode,
+                    openAiConfig = openAiConfig,
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                userMessages.showShortMessage("翻译失败: ${error.message ?: "网络错误"}")
+            } finally {
+                translationLoading = false
+            }
+        }
+    }
+
+    fun toggleTranslation(
+        mode: com.github.zly2006.zhihu.translation.TranslationMode = com.github.zly2006.zhihu.translation.TranslationMode.Bilingual,
+        engine: com.github.zly2006.zhihu.translation.TranslationEngine = translationEngine,
+        openAiConfig: com.github.zly2006.zhihu.translation.OpenAiTranslationConfig? = null,
+    ) {
+        if (translationMode == mode && translationEngine == engine) {
+            translationMode = null
+        } else {
+            setTranslationMode(mode, engine, openAiConfig)
+        }
+    }
 
     /**
      * 缓存的回答完整内容，用于水平滑动预览。
