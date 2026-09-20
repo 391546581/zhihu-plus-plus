@@ -1,4 +1,3 @@
-
 /*
  * Zhihu++ - Free & Ad-Free Zhihu client for all platforms.
  * Copyright (C) 2024-2026, zly2006 <i@zly2006.me>
@@ -34,13 +33,17 @@ import kotlinx.serialization.json.put
 private const val YOUDAO_ENDPOINT = "https://aidemo.youdao.com/trans"
 private const val MYMEMORY_ENDPOINT = "https://api.mymemory.translated.net/get"
 
-enum class TranslationEngine(val displayName: String) {
+enum class TranslationEngine(
+    val displayName: String,
+) {
     Microsoft("MyMemory 智能翻译 (默认稳定)"),
     OpenAICompatible("AI 大模型 (GLM / Qwen / DeepSeek)"),
     Youdao("有道地道翻译 (AI/NMT)"),
 }
 
-enum class TranslationMode(val displayName: String) {
+enum class TranslationMode(
+    val displayName: String,
+) {
     Bilingual("中英双语对照"),
     TranslationOnly("纯英文译文"),
 }
@@ -77,13 +80,11 @@ class TranslationClient(
         targetLanguage: String? = null,
         openAiConfig: OpenAiTranslationConfig? = null,
     ): TranslatedArticle {
-        val isChinese = containsChinese(title + " " + extractAllPlainText(html))
-        val targetLang = targetLanguage ?: if (isChinese) "en" else "zh-CN"
-
-        // 1. 翻译标题
+        // 1. 翻译标题（智能判定标题自身语言：中文翻英，英文翻中）
         val translatedTitle = if (title.isNotBlank()) {
+            val titleTargetLang = targetLanguage ?: if (containsChinese(title)) "en" else "zh-CN"
             try {
-                translateSingle(title.trim(), targetLang, engine, openAiConfig)
+                translateSingle(title.trim(), titleTargetLang, engine, openAiConfig)
             } catch (e: Exception) {
                 Log.w("TranslationClient", "Failed to translate title with $engine", e)
                 title
@@ -93,7 +94,7 @@ class TranslationClient(
         }
 
         // 2. 翻译正文全量内容
-        val translatedContent = translateHtmlContent(html, engine, mode, targetLang, openAiConfig)
+        val translatedContent = translateHtmlContent(html, engine, mode, targetLanguage, openAiConfig)
 
         return TranslatedArticle(
             title = translatedTitle,
@@ -116,8 +117,7 @@ class TranslationClient(
     ): String {
         val plain = unescapeHtml(stripHtmlTags(htmlOrText)).trim()
         if (plain.isBlank() || isPureSymbolOrNumber(plain)) return plain
-        val isChinese = containsChinese(plain)
-        val targetLang = targetLanguage ?: if (isChinese) "en" else "zh-CN"
+        val targetLang = targetLanguage ?: if (containsChinese(plain)) "en" else "zh-CN"
         return try {
             translateSingle(plain, targetLang, engine, openAiConfig)
         } catch (e: CancellationException) {
@@ -132,7 +132,7 @@ class TranslationClient(
         html: String,
         engine: TranslationEngine,
         mode: TranslationMode,
-        targetLanguage: String,
+        targetLanguage: String?,
         openAiConfig: OpenAiTranslationConfig?,
     ): String {
         // 将 HTML 分割为结构块与标签，保留所有的 HTML 标签、公式、代码与图片
@@ -157,11 +157,14 @@ class TranslationClient(
             if (plainText.isBlank() || isPureSymbolOrNumber(plainText)) {
                 resultBuilder.append(openTag).append(innerContent).append(closeTag)
             } else {
-                // 每段之间加入微小间隔，彻底避免免费公开端点触发 411 频率过快限流
+                // 每段自适应语言判定：中文段落翻译为英文，英文/外文段落翻译为中文
+                val segmentTargetLang = targetLanguage ?: if (containsChinese(plainText)) "en" else "zh-CN"
+
+                // 非大模型时加入轻微间隔，避免免费端点频率过高
                 if (engine != TranslationEngine.OpenAICompatible) {
-                    kotlinx.coroutines.delay(120)
+                    kotlinx.coroutines.delay(100)
                 }
-                val translatedText = translateSingle(plainText, targetLanguage, engine, openAiConfig)
+                val translatedText = translateSingle(plainText, segmentTargetLang, engine, openAiConfig)
 
                 val isSuccess = translatedText.isNotBlank() && translatedText != plainText
                 when (mode) {
@@ -194,7 +197,7 @@ class TranslationClient(
         html: String,
         engine: TranslationEngine,
         mode: TranslationMode,
-        targetLanguage: String,
+        targetLanguage: String?,
         openAiConfig: OpenAiTranslationConfig?,
     ): String {
         val tokens = Regex("<[^>]+>|[^<]+\\z|[^<]+(?=<)").findAll(html).map { it.value }.toList()
@@ -207,8 +210,9 @@ class TranslationClient(
         for (index in textIndexes) {
             val sourceText = unescapeHtml(tokens[index].trim())
             if (sourceText.isBlank() || isPureSymbolOrNumber(sourceText)) continue
+            val segTargetLang = targetLanguage ?: if (containsChinese(sourceText)) "en" else "zh-CN"
             val trans = try {
-                translateSingle(sourceText, targetLanguage, engine, openAiConfig)
+                translateSingle(sourceText, segTargetLang, engine, openAiConfig)
             } catch (e: Exception) {
                 sourceText
             }
@@ -228,29 +232,33 @@ class TranslationClient(
         targetLanguage: String,
         engine: TranslationEngine,
         openAiConfig: OpenAiTranslationConfig? = null,
-    ): String {
-        return try {
-            when (engine) {
-                TranslationEngine.OpenAICompatible -> translateOpenAiCompatible(text, targetLanguage, openAiConfig)
-                TranslationEngine.Youdao -> translateYoudao(text, targetLanguage)
-                TranslationEngine.Microsoft -> translateMyMemory(text, targetLanguage)
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w("TranslationClient", "Engine $engine failed for text snippet: ${text.take(30)}", e)
-            // 自动 fallback 容灾：优先降级到 MyMemory 或 Youdao
-            try {
-                when (engine) {
-                    TranslationEngine.OpenAICompatible -> translateMyMemory(text, targetLanguage)
-                    TranslationEngine.Youdao -> translateMyMemory(text, targetLanguage)
-                    TranslationEngine.Microsoft -> translateYoudao(text, targetLanguage)
+    ): String = try {
+        when (engine) {
+            TranslationEngine.OpenAICompatible -> {
+                if (openAiConfig != null && openAiConfig.apiKey.isNotBlank()) {
+                    translateOpenAiCompatible(text, targetLanguage, openAiConfig)
+                } else {
+                    translateMyMemory(text, targetLanguage)
                 }
-            } catch (fallbackEx: CancellationException) {
-                throw fallbackEx
-            } catch (fallbackEx: Exception) {
-                text
             }
+            TranslationEngine.Youdao -> translateYoudao(text, targetLanguage)
+            TranslationEngine.Microsoft -> translateMyMemory(text, targetLanguage)
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w("TranslationClient", "Engine $engine failed for text snippet: ${text.take(30)}", e)
+        // 自动 fallback 容灾：优先降级到 MyMemory 或 Youdao
+        try {
+            when (engine) {
+                TranslationEngine.OpenAICompatible -> translateMyMemory(text, targetLanguage)
+                TranslationEngine.Youdao -> translateMyMemory(text, targetLanguage)
+                TranslationEngine.Microsoft -> translateYoudao(text, targetLanguage)
+            }
+        } catch (fallbackEx: CancellationException) {
+            throw fallbackEx
+        } catch (fallbackEx: Exception) {
+            text
         }
     }
 
@@ -333,7 +341,8 @@ class TranslationClient(
     }
 
     private suspend fun translateMyMemory(text: String, targetLanguage: String): String {
-        val langPair = if (targetLanguage == "en") "zh|en" else "en|zh"
+        val isChinese = containsChinese(text)
+        val langPair = if (targetLanguage == "en" || (targetLanguage == "zh-CN" && !isChinese) || isChinese) "zh|en" else "en|zh"
         val response = httpClient.get(MYMEMORY_ENDPOINT) {
             parameter("q", text)
             parameter("langpair", langPair)
@@ -348,13 +357,9 @@ class TranslationClient(
         return translated?.takeIf { it.isNotBlank() } ?: text
     }
 
-    private fun extractAllPlainText(html: String): String {
-        return unescapeHtml(html.replace(Regex("<[^>]+>"), " "))
-    }
+    private fun extractAllPlainText(html: String): String = unescapeHtml(html.replace(Regex("<[^>]+>"), " "))
 
-    private fun stripHtmlTags(html: String): String {
-        return html.replace(Regex("<[^>]+>"), " ")
-    }
+    private fun stripHtmlTags(html: String): String = html.replace(Regex("<[^>]+>"), " ")
 
     private fun containsChinese(text: String): Boolean {
         var chineseCount = 0
@@ -370,9 +375,7 @@ class TranslationClient(
         return if (totalLetters == 0) false else (chineseCount.toFloat() / totalLetters) > 0.15f
     }
 
-    private fun isPureSymbolOrNumber(text: String): Boolean {
-        return text.all { !it.isLetter() }
-    }
+    private fun isPureSymbolOrNumber(text: String): Boolean = text.all { !it.isLetter() }
 }
 
 private fun escapeHtml(text: String): String = text
