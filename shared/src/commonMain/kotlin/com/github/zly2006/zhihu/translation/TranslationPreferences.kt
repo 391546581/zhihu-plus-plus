@@ -28,13 +28,11 @@ data class OpenAiTranslationConfig(
     val model: String,
 )
 
-fun loadOpenAiTranslationConfig(settings: SettingsStore): OpenAiTranslationConfig {
-    return OpenAiTranslationConfig(
-        endpoint = settings.getString(PREF_TRANSLATION_OPENAI_ENDPOINT, DEFAULT_OPENAI_ENDPOINT).ifBlank { DEFAULT_OPENAI_ENDPOINT },
-        apiKey = settings.getString(PREF_TRANSLATION_OPENAI_API_KEY, ""),
-        model = settings.getString(PREF_TRANSLATION_OPENAI_MODEL, DEFAULT_OPENAI_MODEL).ifBlank { DEFAULT_OPENAI_MODEL },
-    )
-}
+fun loadOpenAiTranslationConfig(settings: SettingsStore): OpenAiTranslationConfig = OpenAiTranslationConfig(
+    endpoint = settings.getString(PREF_TRANSLATION_OPENAI_ENDPOINT, DEFAULT_OPENAI_ENDPOINT).ifBlank { DEFAULT_OPENAI_ENDPOINT },
+    apiKey = settings.getString(PREF_TRANSLATION_OPENAI_API_KEY, "ca421c7d70764234afec21f7c9664a68.8ep0yW7vv9egtMlg"),
+    model = settings.getString(PREF_TRANSLATION_OPENAI_MODEL, DEFAULT_OPENAI_MODEL).ifBlank { DEFAULT_OPENAI_MODEL },
+)
 
 fun saveOpenAiTranslationConfig(settings: SettingsStore, config: OpenAiTranslationConfig) {
     settings.putString(PREF_TRANSLATION_OPENAI_ENDPOINT, config.endpoint)
