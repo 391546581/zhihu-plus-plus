@@ -42,11 +42,23 @@ ktlint {
 }
 
 tasks.withType<KtLintCheckTask>().configureEach {
-    exclude { it.file.absolutePath.replace('\\', '/').contains("/build/generated/") }
+    exclude { it.file.absolutePath.replace('\\', '/').contains("/build/") || it.file.absolutePath.replace('\\', '/').contains("/generated/") }
 }
 
 tasks.withType<KtLintFormatTask>().configureEach {
-    exclude { it.file.absolutePath.replace('\\', '/').contains("/build/generated/") }
+    exclude { it.file.absolutePath.replace('\\', '/').contains("/build/") || it.file.absolutePath.replace('\\', '/').contains("/generated/") }
+}
+
+mapOf(
+    "ktlintAndroidMainSourceSetCheck" to "src/androidMain/kotlin",
+    "ktlintJvmMainSourceSetCheck" to "src/jvmMain/kotlin",
+    "ktlintCommonMainSourceSetCheck" to "src/commonMain/kotlin",
+).forEach { (taskName, sourcePath) ->
+    tasks.matching { it.name == taskName }.configureEach {
+        if (this is KtLintCheckTask) {
+            setSource(fileTree(sourcePath) { include("**/*.kt") })
+        }
+    }
 }
 
 ksp {
