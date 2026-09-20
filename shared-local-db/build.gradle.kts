@@ -15,9 +15,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import org.gradle.api.tasks.SourceTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jlleitschuh.gradle.ktlint.tasks.KtLintCheckTask
-import org.jlleitschuh.gradle.ktlint.tasks.KtLintFormatTask
 
 plugins {
     kotlin("multiplatform")
@@ -37,26 +36,27 @@ ktlint {
         exclude("build/generated/**")
         exclude("**/build/generated/ksp/**")
         exclude("**/ksp/**")
-        exclude { it.file.absolutePath.replace('\\', '/').contains("/build/generated/") }
+        exclude { it.file.absolutePath.contains("/build/generated/") }
     }
 }
 
-tasks.withType<KtLintCheckTask>().configureEach {
-    exclude { it.file.absolutePath.replace('\\', '/').contains("/build/") || it.file.absolutePath.replace('\\', '/').contains("/generated/") }
-}
-
-tasks.withType<KtLintFormatTask>().configureEach {
-    exclude { it.file.absolutePath.replace('\\', '/').contains("/build/") || it.file.absolutePath.replace('\\', '/').contains("/generated/") }
-}
-
 mapOf(
-    "ktlintAndroidMainSourceSetCheck" to "src/androidMain/kotlin",
-    "ktlintJvmMainSourceSetCheck" to "src/jvmMain/kotlin",
-    "ktlintCommonMainSourceSetCheck" to "src/commonMain/kotlin",
-).forEach { (taskName, sourcePath) ->
+    "runKtlintCheckOverAndroidMainSourceSet" to listOf("src/androidMain/kotlin"),
+    "runKtlintCheckOverJvmMainSourceSet" to listOf("src/jvmMain/kotlin"),
+    "runKtlintCheckOverCommonMainSourceSet" to listOf("src/commonMain/kotlin"),
+    "runKtlintFormatOverAndroidMainSourceSet" to listOf("src/androidMain/kotlin"),
+    "runKtlintFormatOverJvmMainSourceSet" to listOf("src/jvmMain/kotlin"),
+    "runKtlintFormatOverCommonMainSourceSet" to listOf("src/commonMain/kotlin"),
+).forEach { (taskName, sourcePaths) ->
     tasks.matching { it.name == taskName }.configureEach {
-        if (this is KtLintCheckTask) {
-            setSource(fileTree(sourcePath) { include("**/*.kt") })
+        if (this is SourceTask) {
+            setSource(
+                sourcePaths.map { sourcePath ->
+                    fileTree(sourcePath) {
+                        include("**/*.kt")
+                    }
+                },
+            )
         }
     }
 }
