@@ -147,8 +147,16 @@ import com.github.zly2006.zhihu.platform.PlatformBackHandler
 import com.github.zly2006.zhihu.platform.rememberExternalUrlOpener
 import com.github.zly2006.zhihu.platform.rememberImagePreviewOpener
 import com.github.zly2006.zhihu.platform.rememberImageSaver
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Translate
 import com.github.zly2006.zhihu.platform.rememberImageSharer
+import com.github.zly2006.zhihu.platform.rememberPlainTextClipboard
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
+import com.github.zly2006.zhihu.translation.PREF_TRANSLATION_AUTO_COMMENT
+import com.github.zly2006.zhihu.translation.TranslationClient
+import com.github.zly2006.zhihu.translation.TranslationEngine
+import com.github.zly2006.zhihu.translation.loadGlobalTranslationEngine
+import com.github.zly2006.zhihu.translation.loadOpenAiTranslationConfig
 import com.github.zly2006.zhihu.reading.ReadingCommentOrder
 import com.github.zly2006.zhihu.reading.loadReadingPreferences
 import com.github.zly2006.zhihu.reading.saveReadingPreferences
@@ -1262,6 +1270,32 @@ private fun CommentItem(
             urlToken = commentData.author.urlToken,
         )
     var showMoreMenu by remember(commentData.id) { mutableStateOf(false) }
+    val settings = rememberSettingsStore()
+    val copyPlainText = rememberPlainTextClipboard()
+    val paginationEnvironment = rememberPaginationEnvironment(allowGuestAccess = false)
+    val autoTranslateComment by remember { mutableStateOf(settings.getBoolean(PREF_TRANSLATION_AUTO_COMMENT, false)) }
+    val globalEngine = remember { loadGlobalTranslationEngine(settings) }
+    val openAiConfig = remember { loadOpenAiTranslationConfig(settings) }
+    var translationEngine by remember(commentData.id) { mutableStateOf(globalEngine) }
+    var translatedCommentText by remember(commentData.id) { mutableStateOf<String?>(null) }
+    var isTranslating by remember(commentData.id) { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(commentData.id, commentData.content, autoTranslateComment) {
+        if (autoTranslateComment && commentData.content.isNotBlank() && translatedCommentText == null && !isTranslating) {
+            isTranslating = true
+            try {
+                val client = paginationEnvironment.httpClient()
+                val result = TranslationClient(client).translateCommentText(commentData.content, translationEngine, openAiConfig = openAiConfig)
+                if (result.isNotBlank() && result != commentData.content) {
+                    translatedCommentText = result
+                }
+            } catch (_: Exception) {
+            } finally {
+                isTranslating = false
+            }
+        }
+    }
 
     Column(modifier = modifier.fillMaxWidth()) {
         // 作者信息
@@ -1363,7 +1397,6 @@ private fun CommentItem(
                 val inlineContent = rememberCommentEmojiInlineContent(emojisUsed)
 
                 Column {
-                    val settings = rememberSettingsStore()
                     val fontSizePercent = remember { settings.getInt(PREF_FONT_SIZE, 100) }
                     val lineHeightPercent = remember { settings.getInt(PREF_LINE_HEIGHT, 160) }
                     SelectionContainer(
@@ -1376,6 +1409,57 @@ private fun CommentItem(
                             inlineContent = inlineContent,
                         )
                     }
+
+                    if (isTranslating) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 4.dp),
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "正在翻译评论...",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else if (translatedCommentText != null && translatedCommentText != commentData.content) {
+                        Surface(
+                            modifier = Modifier
+                                .padding(top = 4.dp)
+                                .fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Filled.Translate,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(12.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "译文 (${translationEngine.displayName.substringBefore(" ")})",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                SelectionContainer(modifier = Modifier.commentSelectionWorkaround()) {
+                                    Text(
+                                        text = translatedCommentText!!,
+                                        fontSize = 15.sp * fontSizePercent / 100,
+                                        lineHeight = 15.sp * fontSizePercent / 100 * lineHeightPercent / 100,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     if (commentImg != null) {
                         ClickableImageWithMenu(
                             imageUrl = commentImg,
@@ -1426,25 +1510,62 @@ private fun CommentItem(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            if (onDelete != null) {
-                Box {
-                    IconButton(
-                        onClick = { showMoreMenu = true },
-                        modifier = Modifier
-                            .size(24.dp)
-                            .testTag("comment_more_button_${commentData.id}"),
-                    ) {
-                        Icon(
-                            Icons.Default.MoreVert,
-                            contentDescription = "更多操作",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = showMoreMenu,
-                        onDismissRequest = { showMoreMenu = false },
-                    ) {
+            Box {
+                IconButton(
+                    onClick = { showMoreMenu = true },
+                    modifier = Modifier
+                        .size(24.dp)
+                        .testTag("comment_more_button_${commentData.id}"),
+                ) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "更多操作",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                DropdownMenu(
+                    expanded = showMoreMenu,
+                    onDismissRequest = { showMoreMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(if (translatedCommentText != null) "隐藏翻译" else "翻译评论") },
+                        leadingIcon = {
+                            Icon(Icons.Filled.Translate, contentDescription = null)
+                        },
+                        onClick = {
+                            showMoreMenu = false
+                            if (translatedCommentText != null) {
+                                translatedCommentText = null
+                            } else {
+                                isTranslating = true
+                                coroutineScope.launch {
+                                    try {
+                                        val client = paginationEnvironment.httpClient()
+                                        val result = TranslationClient(client).translateCommentText(commentData.content, translationEngine, openAiConfig = openAiConfig)
+                                        if (result.isNotBlank() && result != commentData.content) {
+                                            translatedCommentText = result
+                                        }
+                                    } catch (_: Exception) {
+                                    } finally {
+                                        isTranslating = false
+                                    }
+                                }
+                            }
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("复制内容") },
+                        leadingIcon = {
+                            Icon(Icons.Filled.ContentCopy, contentDescription = null)
+                        },
+                        onClick = {
+                            showMoreMenu = false
+                            val plainText = Ksoup.parseBodyFragment(commentData.content).text()
+                            copyPlainText("评论", plainText)
+                        },
+                    )
+                    if (onDelete != null) {
                         DropdownMenuItem(
                             modifier = Modifier.testTag("comment_delete_menu_item_${commentData.id}"),
                             text = { Text("删除", color = MaterialTheme.colorScheme.error) },
@@ -1462,8 +1583,8 @@ private fun CommentItem(
                         )
                     }
                 }
-                Spacer(modifier = Modifier.width(8.dp))
             }
+            Spacer(modifier = Modifier.width(8.dp))
 
             // 回复按钮
             Row(
