@@ -100,6 +100,24 @@ import com.github.zly2006.zhihu.platform.isPageTurnSupported
 import com.github.zly2006.zhihu.platform.platformBottomBarItemLimit
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
+import com.github.zly2006.zhihu.translation.DEFAULT_OPENAI_ENDPOINT
+import com.github.zly2006.zhihu.translation.DEFAULT_OPENAI_MODEL
+import com.github.zly2006.zhihu.translation.OpenAiTranslationConfig
+import com.github.zly2006.zhihu.translation.PREF_TRANSLATION_AUTO_ARTICLE
+import com.github.zly2006.zhihu.translation.PREF_TRANSLATION_AUTO_COMMENT
+import com.github.zly2006.zhihu.translation.PREF_TRANSLATION_GLOBAL_ENGINE
+import com.github.zly2006.zhihu.translation.PREF_TRANSLATION_GLOBAL_MODE
+import com.github.zly2006.zhihu.translation.PREF_TRANSLATION_OPENAI_API_KEY
+import com.github.zly2006.zhihu.translation.PREF_TRANSLATION_OPENAI_ENDPOINT
+import com.github.zly2006.zhihu.translation.PREF_TRANSLATION_OPENAI_MODEL
+import com.github.zly2006.zhihu.translation.TranslationEngine
+import com.github.zly2006.zhihu.translation.TranslationMode
+import com.github.zly2006.zhihu.translation.loadGlobalTranslationEngine
+import com.github.zly2006.zhihu.translation.loadGlobalTranslationMode
+import com.github.zly2006.zhihu.translation.loadOpenAiTranslationConfig
+import com.github.zly2006.zhihu.translation.saveGlobalTranslationEngine
+import com.github.zly2006.zhihu.translation.saveGlobalTranslationMode
+import com.github.zly2006.zhihu.translation.saveOpenAiTranslationConfig
 import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ThemeMode
 import com.github.zly2006.zhihu.ui.ANSWER_DOUBLE_TAP_ACTION_PREFERENCE_KEY
@@ -153,13 +171,11 @@ const val APPEARANCE_SETTINGS_WEBVIEW_OPTIONS_TAG = "appearanceSettings.webViewO
 const val APPEARANCE_SETTINGS_BOTTOM_BAR_SECTION_KEY = "appearanceSettings.bottomBarSection"
 const val APPEARANCE_SETTINGS_COLLECTION_DIRECT_BROWSE_TAG = "appearanceSettings.collectionDirectBrowse"
 const val APPEARANCE_SETTINGS_DISABLE_BOTTOM_SHEET_ROUNDED_CORNERS_TAG = "appearanceSettings.disableBottomSheetRoundedCorners"
-const val APPEARANCE_SETTINGS_LANDSCAPE_LIST_DETAIL_TAG = "appearanceSettings.landscapeListDetail"
 
 const val START_DESTINATION_PREFERENCE_KEY = "startDestination"
 const val BOTTOM_BAR_ITEMS_PREFERENCE_KEY = "bottom_bar_items"
 const val BOTTOM_BAR_ITEM_ORDER_PREFERENCE_KEY = "bottom_bar_item_order"
 const val COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY = "collectionDirectBrowse"
-const val LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY = "landscapeListDetail"
 private const val BOTTOM_BAR_ITEM_ORDER_SEPARATOR = ","
 internal val contentFontSizeLevels = (50..120 step 5).toList() + (130..200 step 10).toList()
 private val bottomBarSettingItemHeight = 64.dp
@@ -614,23 +630,6 @@ fun AppearanceSettingsScreen(
                         )
                     },
                 )
-
-                val landscapeListDetailEnabled = remember {
-                    mutableStateOf(settings.getBoolean(LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY, true))
-                }
-                SettingItemWithSwitch(
-                    modifier = Modifier.testTag(APPEARANCE_SETTINGS_LANDSCAPE_LIST_DETAIL_TAG),
-                    title = { Text("横屏双栏布局") },
-                    description = { Text("在平板和电脑横屏时同时显示列表与详情。手机横屏始终使用单栏。") },
-                    checked = landscapeListDetailEnabled.value,
-                    onCheckedChange = {
-                        landscapeListDetailEnabled.value = it
-                        settings.putBoolean(LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY, it)
-                    },
-                    settingKey = LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY,
-                    highlightedKey = settingKey,
-                    bringIntoViewRequester = requesterFor(LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY),
-                )
             }
             // ── 阅读 ────────────────────────────────────────────────────────────
             SettingItemGroup(
@@ -706,6 +705,217 @@ fun AppearanceSettingsScreen(
                             steps = 29,
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                         )
+                    },
+                )
+            }
+
+            // ── 翻译与双语阅读 ──────────────────────────────────────────────────
+            SettingItemGroup(
+                title = "翻译与双语阅读",
+                footer = { Text("开启后进入文章、回答或评论时将根据设定的模式自动翻译，无需每次手动点击。") },
+            ) {
+                var autoArticle by remember { mutableStateOf(settings.getBoolean(PREF_TRANSLATION_AUTO_ARTICLE, false)) }
+                SettingItemWithSwitch(
+                    title = { Text("自动翻译正文与回答") },
+                    description = { Text("打开文章或回答时，自动执行翻译并切换为双语或译文。") },
+                    checked = autoArticle,
+                    onCheckedChange = {
+                        autoArticle = it
+                        settings.putBoolean(PREF_TRANSLATION_AUTO_ARTICLE, it)
+                    },
+                )
+
+                var autoComment by remember { mutableStateOf(settings.getBoolean(PREF_TRANSLATION_AUTO_COMMENT, false)) }
+                SettingItemWithSwitch(
+                    title = { Text("自动翻译评论") },
+                    description = { Text("浏览评论区时，自动在每条评论下方展示对应译文。") },
+                    checked = autoComment,
+                    onCheckedChange = {
+                        autoComment = it
+                        settings.putBoolean(PREF_TRANSLATION_AUTO_COMMENT, it)
+                    },
+                )
+
+                var globalMode by remember { mutableStateOf(loadGlobalTranslationMode(settings)) }
+                var modeExpanded by remember { mutableStateOf(false) }
+                SettingItem(
+                    title = { Text("默认翻译模式") },
+                    description = { Text("选择双语对照（保留原句加译文）或沉浸式纯译文。") },
+                    endAction = {
+                        ExposedDropdownMenuBox(
+                            expanded = modeExpanded,
+                            onExpandedChange = { modeExpanded = it },
+                        ) {
+                            OutlinedTextField(
+                                value = globalMode.displayName,
+                                onValueChange = {},
+                                readOnly = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modeExpanded) },
+                                modifier = Modifier
+                                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                    .width(170.dp),
+                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                            )
+                            ExposedDropdownMenu(
+                                expanded = modeExpanded,
+                                onDismissRequest = { modeExpanded = false },
+                            ) {
+                                TranslationMode.entries.forEach { mode ->
+                                    DropdownMenuItem(
+                                        text = { Text(mode.displayName) },
+                                        onClick = {
+                                            globalMode = mode
+                                            saveGlobalTranslationMode(settings, mode)
+                                            modeExpanded = false
+                                            userMessages.showShortMessage("已设置为：${mode.displayName}")
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    },
+                )
+
+                var globalEngine by remember { mutableStateOf(loadGlobalTranslationEngine(settings)) }
+                var engineExpanded by remember { mutableStateOf(false) }
+                SettingItem(
+                    title = { Text("默认翻译引擎") },
+                    description = { Text("优先调用的翻译服务端点，网络异常时会自动容灾切换。") },
+                    endAction = {
+                        ExposedDropdownMenuBox(
+                            expanded = engineExpanded,
+                            onExpandedChange = { engineExpanded = it },
+                        ) {
+                            OutlinedTextField(
+                                value = globalEngine.displayName,
+                                onValueChange = {},
+                                readOnly = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = engineExpanded) },
+                                modifier = Modifier
+                                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                    .width(170.dp),
+                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                            )
+                            ExposedDropdownMenu(
+                                expanded = engineExpanded,
+                                onDismissRequest = { engineExpanded = false },
+                            ) {
+                                TranslationEngine.entries.forEach { engine ->
+                                    DropdownMenuItem(
+                                        text = { Text(engine.displayName) },
+                                        onClick = {
+                                            globalEngine = engine
+                                            saveGlobalTranslationEngine(settings, engine)
+                                            engineExpanded = false
+                                            userMessages.showShortMessage("已设置为：${engine.displayName}")
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    },
+                )
+
+                var openAiConfig by remember { mutableStateOf(loadOpenAiTranslationConfig(settings)) }
+                var showApiKey by remember { mutableStateOf(false) }
+
+                SettingItem(
+                    title = { Text("AI 大模型翻译配置 (GLM / Qwen / DeepSeek)") },
+                    description = {
+                        Text("支持接入任意兼容 OpenAI 格式的大语言模型服务进行自然地道的翻译。")
+                    },
+                    bottomAction = {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                androidx.compose.material3.FilterChip(
+                                    selected = openAiConfig.endpoint.contains("bigmodel.cn"),
+                                    onClick = {
+                                        openAiConfig = openAiConfig.copy(
+                                            endpoint = "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+                                            model = "glm-4-flash",
+                                        )
+                                        saveOpenAiTranslationConfig(settings, openAiConfig)
+                                        userMessages.showShortMessage("已切换为智谱 GLM 预设")
+                                    },
+                                    label = { Text("智谱 GLM") },
+                                )
+                                androidx.compose.material3.FilterChip(
+                                    selected = openAiConfig.endpoint.contains("aliyuncs.com"),
+                                    onClick = {
+                                        openAiConfig = openAiConfig.copy(
+                                            endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+                                            model = "qwen-plus",
+                                        )
+                                        saveOpenAiTranslationConfig(settings, openAiConfig)
+                                        userMessages.showShortMessage("已切换为通义千问 Qwen 预设")
+                                    },
+                                    label = { Text("通义千问 Qwen") },
+                                )
+                                androidx.compose.material3.FilterChip(
+                                    selected = openAiConfig.endpoint.contains("deepseek.com"),
+                                    onClick = {
+                                        openAiConfig = openAiConfig.copy(
+                                            endpoint = "https://api.deepseek.com/chat/completions",
+                                            model = "deepseek-chat",
+                                        )
+                                        saveOpenAiTranslationConfig(settings, openAiConfig)
+                                        userMessages.showShortMessage("已切换为 DeepSeek 预设")
+                                    },
+                                    label = { Text("DeepSeek") },
+                                )
+                            }
+
+                            OutlinedTextField(
+                                value = openAiConfig.endpoint,
+                                onValueChange = {
+                                    openAiConfig = openAiConfig.copy(endpoint = it)
+                                    saveOpenAiTranslationConfig(settings, openAiConfig)
+                                },
+                                label = { Text("API Endpoint URL") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                            )
+
+                            OutlinedTextField(
+                                value = openAiConfig.apiKey,
+                                onValueChange = {
+                                    openAiConfig = openAiConfig.copy(apiKey = it)
+                                    saveOpenAiTranslationConfig(settings, openAiConfig)
+                                },
+                                label = { Text("API Key (令牌)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                trailingIcon = {
+                                    Text(
+                                        text = if (showApiKey) "隐藏" else "显示",
+                                        modifier = Modifier
+                                            .clickable { showApiKey = !showApiKey }
+                                            .padding(end = 12.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.labelMedium,
+                                    )
+                                },
+                            )
+
+                            OutlinedTextField(
+                                value = openAiConfig.model,
+                                onValueChange = {
+                                    openAiConfig = openAiConfig.copy(model = it)
+                                    saveOpenAiTranslationConfig(settings, openAiConfig)
+                                },
+                                label = { Text("模型名称 (如 glm-4-flash / qwen-plus / deepseek-chat)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                            )
+                        }
                     },
                 )
             }
