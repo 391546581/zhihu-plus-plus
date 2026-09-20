@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.FilterCenterFocus
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.GetApp
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -54,15 +55,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
-import androidx.compose.material.icons.filled.Translate
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
-import com.github.zly2006.zhihu.translation.TranslationEngine
-import com.github.zly2006.zhihu.translation.TranslationMode
-import com.github.zly2006.zhihu.translation.loadOpenAiTranslationConfig
-import com.github.zly2006.zhihu.translation.saveGlobalTranslationEngine
-import com.github.zly2006.zhihu.translation.saveGlobalTranslationMode
 import com.github.zly2006.zhihu.reading.ReadingContentType
 import com.github.zly2006.zhihu.reading.ReadingQueueItem
 import com.github.zly2006.zhihu.reading.ReadingQueueSourceRegistry
@@ -73,6 +68,11 @@ import com.github.zly2006.zhihu.reading.loadReadingPlaybackSpeed
 import com.github.zly2006.zhihu.reading.loadReadingPreferences
 import com.github.zly2006.zhihu.reading.rememberReadingPlayerController
 import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.translation.TranslationEngine
+import com.github.zly2006.zhihu.translation.TranslationMode
+import com.github.zly2006.zhihu.translation.loadOpenAiTranslationConfig
+import com.github.zly2006.zhihu.translation.saveGlobalTranslationEngine
+import com.github.zly2006.zhihu.translation.saveGlobalTranslationMode
 import com.github.zly2006.zhihu.ui.TtsState
 import com.github.zly2006.zhihu.ui.articleActionText
 import com.github.zly2006.zhihu.ui.articleSpeechText
