@@ -233,6 +233,15 @@ fun ArticleScreen(
     val pageTurnSwitchAnswer by rememberObservedSetting(settings, PREF_PAGE_TURN_SWITCH_ANSWER) {
         getBoolean(PREF_PAGE_TURN_SWITCH_ANSWER, DEFAULT_PAGE_TURN_SWITCH_ANSWER)
     }
+    val autoTranslateArticle by rememberObservedSetting(settings, com.github.zly2006.zhihu.translation.PREF_TRANSLATION_AUTO_ARTICLE) {
+        getBoolean(com.github.zly2006.zhihu.translation.PREF_TRANSLATION_AUTO_ARTICLE, false)
+    }
+    val globalTranslationModeStr by rememberObservedSetting(settings, com.github.zly2006.zhihu.translation.PREF_TRANSLATION_GLOBAL_MODE) {
+        getString(com.github.zly2006.zhihu.translation.PREF_TRANSLATION_GLOBAL_MODE, com.github.zly2006.zhihu.translation.TranslationMode.Bilingual.name)
+    }
+    val globalTranslationEngineStr by rememberObservedSetting(settings, com.github.zly2006.zhihu.translation.PREF_TRANSLATION_GLOBAL_ENGINE) {
+        getString(com.github.zly2006.zhihu.translation.PREF_TRANSLATION_GLOBAL_ENGINE, com.github.zly2006.zhihu.translation.TranslationEngine.Microsoft.name)
+    }
 
     fun saveAnswerDoubleTapAction(action: AnswerDoubleTapAction) {
         answerDoubleTapAction = action
@@ -404,6 +413,17 @@ fun ArticleScreen(
         viewModel.loadAigcFlagStatus(environment)
     }
 
+    LaunchedEffect(article.id, viewModel.content, autoTranslateArticle) {
+        if (autoTranslateArticle && viewModel.content.isNotBlank() && viewModel.translatedArticle == null && !viewModel.translationLoading) {
+            val mode = runCatching { com.github.zly2006.zhihu.translation.TranslationMode.valueOf(globalTranslationModeStr) }
+                .getOrDefault(com.github.zly2006.zhihu.translation.TranslationMode.Bilingual)
+            val engine = runCatching { com.github.zly2006.zhihu.translation.TranslationEngine.valueOf(globalTranslationEngineStr) }
+                .getOrDefault(com.github.zly2006.zhihu.translation.TranslationEngine.Microsoft)
+            val openAiConfig = com.github.zly2006.zhihu.translation.loadOpenAiTranslationConfig(settings)
+            viewModel.setTranslationMode(mode, engine, openAiConfig)
+        }
+    }
+
     LaunchedEffect(article.type, article.id, viewModel.content) {
         if (viewModel.content.isNotBlank()) {
             viewModel.updateAigcReadProgress(scrollState.value, latestEffectiveScrollMaxValue)
@@ -482,7 +502,7 @@ fun ArticleScreen(
                             },
                             title = { expanded ->
                                 Text(
-                                    text = viewModel.title,
+                                    text = viewModel.displayTitle,
                                     modifier = Modifier
                                         .padding(if (expanded) PaddingValues(end = 16.dp) else PaddingValues())
                                         .let {
@@ -1040,8 +1060,8 @@ fun ArticleScreen(
                                 // WebView 正文渲染已经废弃，只保留为紧急回退路径；正文外 UI 不再为它单独分支。
                                 ArticleWebViewContent(
                                     article = article,
-                                    html = viewModel.content,
-                                    title = viewModel.title,
+                                    html = viewModel.displayContent,
+                                    title = viewModel.displayTitle,
                                     scrollState = scrollState,
                                     rememberedScrollY = viewModel.rememberedScrollY,
                                     rememberedScrollYSync = viewModel.rememberedScrollYSync,
@@ -1067,7 +1087,7 @@ fun ArticleScreen(
                                 Spacer(modifier = Modifier.height((16 + 36).dp))
                             } else {
                                 RenderMarkdown(
-                                    html = viewModel.content,
+                                    html = viewModel.displayContent,
                                     modifier = Modifier
                                         .testTag("article_content")
                                         .articleMarkdownSelectionWorkaround(),
