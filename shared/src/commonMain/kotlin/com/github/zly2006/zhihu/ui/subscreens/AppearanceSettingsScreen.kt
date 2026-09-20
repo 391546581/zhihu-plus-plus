@@ -100,16 +100,10 @@ import com.github.zly2006.zhihu.platform.isPageTurnSupported
 import com.github.zly2006.zhihu.platform.platformBottomBarItemLimit
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
-import com.github.zly2006.zhihu.translation.DEFAULT_OPENAI_ENDPOINT
-import com.github.zly2006.zhihu.translation.DEFAULT_OPENAI_MODEL
-import com.github.zly2006.zhihu.translation.OpenAiTranslationConfig
+import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.ThemeMode
 import com.github.zly2006.zhihu.translation.PREF_TRANSLATION_AUTO_ARTICLE
 import com.github.zly2006.zhihu.translation.PREF_TRANSLATION_AUTO_COMMENT
-import com.github.zly2006.zhihu.translation.PREF_TRANSLATION_GLOBAL_ENGINE
-import com.github.zly2006.zhihu.translation.PREF_TRANSLATION_GLOBAL_MODE
-import com.github.zly2006.zhihu.translation.PREF_TRANSLATION_OPENAI_API_KEY
-import com.github.zly2006.zhihu.translation.PREF_TRANSLATION_OPENAI_ENDPOINT
-import com.github.zly2006.zhihu.translation.PREF_TRANSLATION_OPENAI_MODEL
 import com.github.zly2006.zhihu.translation.TranslationEngine
 import com.github.zly2006.zhihu.translation.TranslationMode
 import com.github.zly2006.zhihu.translation.loadGlobalTranslationEngine
@@ -118,8 +112,6 @@ import com.github.zly2006.zhihu.translation.loadOpenAiTranslationConfig
 import com.github.zly2006.zhihu.translation.saveGlobalTranslationEngine
 import com.github.zly2006.zhihu.translation.saveGlobalTranslationMode
 import com.github.zly2006.zhihu.translation.saveOpenAiTranslationConfig
-import com.github.zly2006.zhihu.theme.ThemeManager
-import com.github.zly2006.zhihu.theme.ThemeMode
 import com.github.zly2006.zhihu.ui.ANSWER_DOUBLE_TAP_ACTION_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.ARTICLE_USE_WEBVIEW_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.AnswerDoubleTapAction
@@ -171,12 +163,13 @@ const val APPEARANCE_SETTINGS_WEBVIEW_OPTIONS_TAG = "appearanceSettings.webViewO
 const val APPEARANCE_SETTINGS_BOTTOM_BAR_SECTION_KEY = "appearanceSettings.bottomBarSection"
 const val APPEARANCE_SETTINGS_COLLECTION_DIRECT_BROWSE_TAG = "appearanceSettings.collectionDirectBrowse"
 const val APPEARANCE_SETTINGS_DISABLE_BOTTOM_SHEET_ROUNDED_CORNERS_TAG = "appearanceSettings.disableBottomSheetRoundedCorners"
-const val LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY = "landscape_list_detail"
+const val APPEARANCE_SETTINGS_LANDSCAPE_LIST_DETAIL_TAG = "appearanceSettings.landscapeListDetail"
 
 const val START_DESTINATION_PREFERENCE_KEY = "startDestination"
 const val BOTTOM_BAR_ITEMS_PREFERENCE_KEY = "bottom_bar_items"
 const val BOTTOM_BAR_ITEM_ORDER_PREFERENCE_KEY = "bottom_bar_item_order"
 const val COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY = "collectionDirectBrowse"
+const val LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY = "landscapeListDetail"
 private const val BOTTOM_BAR_ITEM_ORDER_SEPARATOR = ","
 internal val contentFontSizeLevels = (50..120 step 5).toList() + (130..200 step 10).toList()
 private val bottomBarSettingItemHeight = 64.dp
@@ -630,6 +623,23 @@ fun AppearanceSettingsScreen(
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                         )
                     },
+                )
+
+                val landscapeListDetailEnabled = remember {
+                    mutableStateOf(settings.getBoolean(LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY, true))
+                }
+                SettingItemWithSwitch(
+                    modifier = Modifier.testTag(APPEARANCE_SETTINGS_LANDSCAPE_LIST_DETAIL_TAG),
+                    title = { Text("横屏双栏布局") },
+                    description = { Text("在平板和电脑横屏时同时显示列表与详情。手机横屏始终使用单栏。") },
+                    checked = landscapeListDetailEnabled.value,
+                    onCheckedChange = {
+                        landscapeListDetailEnabled.value = it
+                        settings.putBoolean(LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY, it)
+                    },
+                    settingKey = LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY,
+                    highlightedKey = settingKey,
+                    bringIntoViewRequester = requesterFor(LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY),
                 )
             }
             // ── 阅读 ────────────────────────────────────────────────────────────
