@@ -47,15 +47,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
+import androidx.compose.material.icons.filled.Translate
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
+import com.github.zly2006.zhihu.translation.TranslationEngine
+import com.github.zly2006.zhihu.translation.TranslationMode
+import com.github.zly2006.zhihu.translation.loadOpenAiTranslationConfig
+import com.github.zly2006.zhihu.translation.saveGlobalTranslationEngine
+import com.github.zly2006.zhihu.translation.saveGlobalTranslationMode
 import com.github.zly2006.zhihu.reading.ReadingContentType
 import com.github.zly2006.zhihu.reading.ReadingQueueItem
 import com.github.zly2006.zhihu.reading.ReadingQueueSourceRegistry
@@ -361,6 +368,94 @@ fun ArticleActionsMenu(
             onClick = {
                 onDismissRequest()
                 onSummaryRequest()
+            },
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+        // ── 翻译功能操作区 ──────────────────────────────────────────
+        val currentMode = viewModel.translationMode
+        val isTranslating = viewModel.translationLoading
+
+        val openAiConfig = remember(readingSettings) { loadOpenAiTranslationConfig(readingSettings) }
+
+        MenuActionButton(
+            icon = Icons.Filled.Translate,
+            text = when {
+                isTranslating && currentMode == com.github.zly2006.zhihu.translation.TranslationMode.Bilingual -> "正在生成双语对照..."
+                currentMode == com.github.zly2006.zhihu.translation.TranslationMode.Bilingual -> "✓ 当前：中英双语对照"
+                else -> "中英双语对照 (标题+全文)"
+            },
+            enabled = !isTranslating && viewModel.content.isNotBlank(),
+            backgroundColor = if (currentMode == com.github.zly2006.zhihu.translation.TranslationMode.Bilingual) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            },
+            contentColor = if (currentMode == com.github.zly2006.zhihu.translation.TranslationMode.Bilingual) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            onClick = {
+                onDismissRequest()
+                viewModel.setTranslationMode(TranslationMode.Bilingual, openAiConfig = openAiConfig)
+                saveGlobalTranslationMode(readingSettings, TranslationMode.Bilingual)
+            },
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+        MenuActionButton(
+            icon = Icons.Filled.Translate,
+            text = when {
+                isTranslating && currentMode == TranslationMode.TranslationOnly -> "正在翻译全文..."
+                currentMode == TranslationMode.TranslationOnly -> "✓ 当前：纯英文译文"
+                else -> "纯英文译文 (标题+全文)"
+            },
+            enabled = !isTranslating && viewModel.content.isNotBlank(),
+            backgroundColor = if (currentMode == TranslationMode.TranslationOnly) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            },
+            contentColor = if (currentMode == TranslationMode.TranslationOnly) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            onClick = {
+                onDismissRequest()
+                viewModel.setTranslationMode(TranslationMode.TranslationOnly, openAiConfig = openAiConfig)
+                saveGlobalTranslationMode(readingSettings, TranslationMode.TranslationOnly)
+            },
+        )
+
+        if (currentMode != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            MenuActionButton(
+                icon = Icons.Filled.Translate,
+                text = "恢复显示原始中文",
+                enabled = !isTranslating,
+                onClick = {
+                    onDismissRequest()
+                    viewModel.setTranslationMode(null)
+                },
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        val nextEngine = when (viewModel.translationEngine) {
+            TranslationEngine.Microsoft -> TranslationEngine.OpenAICompatible
+            TranslationEngine.OpenAICompatible -> TranslationEngine.Youdao
+            TranslationEngine.Youdao -> TranslationEngine.Microsoft
+        }
+        MenuActionButton(
+            icon = Icons.Filled.Translate,
+            text = "翻译引擎: ${viewModel.translationEngine.displayName} (点击切换)",
+            enabled = !isTranslating,
+            onClick = {
+                onDismissRequest()
+                viewModel.setTranslationMode(viewModel.translationMode ?: TranslationMode.Bilingual, nextEngine, openAiConfig)
+                saveGlobalTranslationEngine(readingSettings, nextEngine)
             },
         )
 
