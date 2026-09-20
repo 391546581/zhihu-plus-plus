@@ -36,16 +36,26 @@ private const val MYMEMORY_ENDPOINT = "https://api.mymemory.translated.net/get"
 enum class TranslationEngine(
     val displayName: String,
 ) {
-    Microsoft("MyMemory 智能翻译 (默认稳定)"),
-    OpenAICompatible("AI 大模型 (GLM / Qwen / DeepSeek)"),
-    Youdao("有道地道翻译 (AI/NMT)"),
+    Microsoft(
+        displayName = "MyMemory 智能翻译 (默认稳定)",
+    ),
+    OpenAICompatible(
+        displayName = "AI 大模型 (GLM / Qwen / DeepSeek)",
+    ),
+    Youdao(
+        displayName = "有道地道翻译 (AI/NMT)",
+    ),
 }
 
 enum class TranslationMode(
     val displayName: String,
 ) {
-    Bilingual("中英双语对照"),
-    TranslationOnly("纯英文译文"),
+    Bilingual(
+        displayName = "中英双语对照",
+    ),
+    TranslationOnly(
+        displayName = "纯英文译文",
+    ),
 }
 
 data class TranslatedArticle(
