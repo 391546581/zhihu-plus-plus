@@ -1,4 +1,5 @@
 -dontwarn com.hrm.latex.parser.tokenizer.LatexTokenizer$Companion
+-dontwarn org.tiqian.math.**
 
 # JavaFX 的工具包和原生窗口栈只能反射加载（javafx.toolkit 属性默认指向
 # com.sun.javafx.tk.quantum.QuantumToolkit，glass/prism 同理），静态分析不可达；
