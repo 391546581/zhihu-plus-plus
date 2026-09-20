@@ -415,11 +415,16 @@ fun ArticleScreen(
 
     LaunchedEffect(article.id, viewModel.content, autoTranslateArticle) {
         if (autoTranslateArticle && viewModel.content.isNotBlank() && viewModel.translatedArticle == null && !viewModel.translationLoading) {
-            val mode = runCatching { com.github.zly2006.zhihu.translation.TranslationMode.valueOf(globalTranslationModeStr) }
-                .getOrDefault(com.github.zly2006.zhihu.translation.TranslationMode.Bilingual)
-            val engine = runCatching { com.github.zly2006.zhihu.translation.TranslationEngine.valueOf(globalTranslationEngineStr) }
-                .getOrDefault(com.github.zly2006.zhihu.translation.TranslationEngine.Microsoft)
-            val openAiConfig = com.github.zly2006.zhihu.translation.loadOpenAiTranslationConfig(settings)
+            val mode = runCatching {
+                com.github.zly2006.zhihu.translation.TranslationMode
+                    .valueOf(globalTranslationModeStr)
+            }.getOrDefault(com.github.zly2006.zhihu.translation.TranslationMode.Bilingual)
+            val engine = runCatching {
+                com.github.zly2006.zhihu.translation.TranslationEngine
+                    .valueOf(globalTranslationEngineStr)
+            }.getOrDefault(com.github.zly2006.zhihu.translation.TranslationEngine.Microsoft)
+            val openAiConfig = com.github.zly2006.zhihu.translation
+                .loadOpenAiTranslationConfig(settings)
             viewModel.setTranslationMode(mode, engine, openAiConfig)
         }
     }
