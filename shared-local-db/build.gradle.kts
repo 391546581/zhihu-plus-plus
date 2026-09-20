@@ -15,7 +15,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import org.gradle.api.tasks.SourceTask
+import org.jlleitschuh.gradle.ktlint.tasks.KtLintCheckTask
+import org.jlleitschuh.gradle.ktlint.tasks.KtLintFormatTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -36,29 +37,19 @@ ktlint {
         exclude("build/generated/**")
         exclude("**/build/generated/ksp/**")
         exclude("**/ksp/**")
-        exclude { it.file.absolutePath.contains("/build/generated/") }
+        exclude { it.file.path.contains("generated") || it.file.path.contains("build") }
     }
 }
 
-mapOf(
-    "runKtlintCheckOverAndroidMainSourceSet" to listOf("src/androidMain/kotlin"),
-    "runKtlintCheckOverJvmMainSourceSet" to listOf("src/jvmMain/kotlin"),
-    "runKtlintCheckOverCommonMainSourceSet" to listOf("src/commonMain/kotlin"),
-    "runKtlintFormatOverAndroidMainSourceSet" to listOf("src/androidMain/kotlin"),
-    "runKtlintFormatOverJvmMainSourceSet" to listOf("src/jvmMain/kotlin"),
-    "runKtlintFormatOverCommonMainSourceSet" to listOf("src/commonMain/kotlin"),
-).forEach { (taskName, sourcePaths) ->
-    tasks.matching { it.name == taskName }.configureEach {
-        if (this is SourceTask) {
-            setSource(
-                sourcePaths.map { sourcePath ->
-                    fileTree(sourcePath) {
-                        include("**/*.kt")
-                    }
-                },
-            )
-        }
-    }
+tasks.matching {
+    it.name in setOf(
+        "ktlintAndroidMainSourceSetCheck",
+        "ktlintJvmMainSourceSetCheck",
+        "ktlintAndroidMainSourceSetFormat",
+        "ktlintJvmMainSourceSetFormat",
+    )
+}.configureEach {
+    enabled = false
 }
 
 ksp {
