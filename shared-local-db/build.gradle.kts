@@ -16,6 +16,8 @@
  */
 
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jlleitschuh.gradle.ktlint.tasks.KtLintCheckTask
+import org.jlleitschuh.gradle.ktlint.tasks.KtLintFormatTask
 
 plugins {
     kotlin("multiplatform")
@@ -35,8 +37,16 @@ ktlint {
         exclude("build/generated/**")
         exclude("**/build/generated/ksp/**")
         exclude("**/ksp/**")
-        exclude { it.file.absolutePath.contains("/build/generated/") }
+        exclude { it.file.absolutePath.replace('\\', '/').contains("/build/generated/") }
     }
+}
+
+tasks.withType<KtLintCheckTask>().configureEach {
+    exclude { it.file.absolutePath.replace('\\', '/').contains("/build/generated/") }
+}
+
+tasks.withType<KtLintFormatTask>().configureEach {
+    exclude { it.file.absolutePath.replace('\\', '/').contains("/build/generated/") }
 }
 
 ksp {
