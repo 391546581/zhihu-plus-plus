@@ -24,10 +24,10 @@ import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import com.github.zly2006.zhihu.account.androidZhihuAccountStore
 import com.github.zly2006.zhihu.platform.androidSettingsStore
-import com.github.zly2006.zhihu.platform.isAndroidLiteVariantPackageName
+import com.github.zly2006.zhihu.platform.isLiteVariant
 import com.github.zly2006.zhihu.updater.GithubAsset
 import com.github.zly2006.zhihu.updater.GithubRelease
-import com.github.zly2006.zhihu.updater.SchematicVersion
+import com.github.zly2006.zhihu.updater.SemanticVersion
 import com.github.zly2006.zhihu.updater.UpdateManager.UpdateState.Downloading
 import com.github.zly2006.zhihu.updater.extractGithubReleaseNotes
 import com.github.zly2006.zhihu.updater.fetchLatestZhihuRelease
@@ -57,7 +57,7 @@ object UpdateManager {
         object Latest : UpdateState()
 
         data class UpdateAvailable(
-            val version: SchematicVersion,
+            val version: SemanticVersion,
             val isNightly: Boolean = false,
             val releaseNotes: String?,
             val downloadUrl: String,
@@ -115,16 +115,16 @@ object UpdateManager {
             updateState.value = UpdateState.Checking
             androidSettingsStore(context).putLong(PREF_LAST_UPDATE_CHECK, System.currentTimeMillis())
 
-            val currentVersion = SchematicVersion.fromString(context.versionName())
+            val currentVersion = SemanticVersion.fromString(context.versionName())
             val skippedVersion = androidSettingsStore(context).getStringOrNull(PREF_SKIPPED_VERSION)
 
-            var latestVersion: SchematicVersion?
+            var latestVersion: SemanticVersion?
 
             // 检查正式版本
             val latestResponse = getLatestVersion(context)
             Log.i("UpdateManager", "Latest version response: $latestResponse")
-            latestVersion = latestResponse.tagName.takeIf { it.isNotBlank() }?.let { SchematicVersion.fromString(it) }
-            val latestDownloadInfo = latestResponse.extractAndroidDownloadInfo(isAndroidLiteVariantPackageName(context.packageName))
+            latestVersion = latestResponse.tagName.takeIf { it.isNotBlank() }?.let { SemanticVersion.fromString(it) }
+            val latestDownloadInfo = latestResponse.extractAndroidDownloadInfo(isLiteVariant)
 
             if (latestVersion != null && latestVersion > currentVersion) {
                 val versionString = latestVersion.toString()
@@ -159,18 +159,18 @@ object UpdateManager {
             androidSettingsStore(context).putLong(PREF_LAST_UPDATE_CHECK, System.currentTimeMillis())
 
             val client = androidZhihuAccountStore(context).client.httpClient()
-            val currentVersion = SchematicVersion.fromString(context.versionName())
+            val currentVersion = SemanticVersion.fromString(context.versionName())
             val checkNightly = androidSettingsStore(context).getBoolean("checkNightlyUpdates", false)
 
-            var latestVersion: SchematicVersion?
+            var latestVersion: SemanticVersion?
             var isNightly = false
             var releaseNotes: String?
 
             // 检查正式版本
             val latestResponse = getLatestVersion(context)
-            latestVersion = latestResponse.tagName.takeIf { it.isNotBlank() }?.let { SchematicVersion.fromString(it) }
+            latestVersion = latestResponse.tagName.takeIf { it.isNotBlank() }?.let { SemanticVersion.fromString(it) }
             releaseNotes = latestResponse.body?.let(::extractGithubReleaseNotes)
-            var downloadInfo = latestResponse.extractAndroidDownloadInfo(isAndroidLiteVariantPackageName(context.packageName))
+            var downloadInfo = latestResponse.extractAndroidDownloadInfo(isLiteVariant)
 
             // 如果启用了nightly检查，也检查nightly版本
             if (checkNightly) {
@@ -179,14 +179,14 @@ object UpdateManager {
 
                     // 如果nightly版本比正式版本新，则使用nightly版本
                     if (nightlyResponse.tagName == "nightly") {
-                        latestVersion = SchematicVersion(
+                        latestVersion = SemanticVersion(
                             allComponents = listOf(999, 0, 0),
                             preRelease = "nightly",
                             build = "",
                         )
                         isNightly = true
                         releaseNotes = nightlyResponse.body?.let(::extractGithubReleaseNotes)
-                        downloadInfo = nightlyResponse.extractAndroidDownloadInfo(isAndroidLiteVariantPackageName(context.packageName))
+                        downloadInfo = nightlyResponse.extractAndroidDownloadInfo(isLiteVariant)
                     }
                 } catch (e: Exception) {
                     // nightly版本检查失败时，继续使用正式版本

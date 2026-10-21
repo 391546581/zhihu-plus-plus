@@ -46,6 +46,7 @@ import com.github.zly2006.zhihu.ui.rememberObservedSetting
 import com.github.zly2006.zhihu.ui.subscreens.DEFAULT_SHOW_CONTENT_END_MARKER
 import com.github.zly2006.zhihu.ui.subscreens.PREF_SHOW_CONTENT_END_MARKER
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 val ProgressIndicatorFooter: @Composable (LazyListState) -> Unit = { state ->
     Box(
@@ -101,13 +102,14 @@ private fun uniqueDuplicatePaginatedListKey(
 @Composable
 private fun <T> LazyItemScope.PaginatedListItem(
     item: T,
+    animateItemPlacement: Boolean,
     itemContent: @Composable LazyItemScope.(T) -> Unit,
 ) {
     Box(
         modifier = Modifier.animateItem(
             fadeInSpec = spring(stiffness = Spring.StiffnessMediumLow),
             fadeOutSpec = spring(stiffness = Spring.StiffnessMediumLow),
-            placementSpec = spring(stiffness = Spring.StiffnessMediumLow),
+            placementSpec = if (animateItemPlacement) spring(stiffness = Spring.StiffnessMediumLow) else null,
         ),
     ) {
         itemContent(item)
@@ -122,6 +124,7 @@ fun <T> PaginatedList(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     listState: LazyListState = rememberLazyListState(),
     reverseLayout: Boolean = false,
+    animateItemPlacement: Boolean = true,
     isEnd: () -> Boolean = { false },
     footer: @Composable ((LazyListState) -> Unit)? = null,
     key: ((T) -> Any)? = null,
@@ -147,10 +150,10 @@ fun <T> PaginatedList(
     }
 
     LaunchedEffect(shouldLoadMore, items.size, isEnd()) {
-        if (shouldLoadMore && items.isNotEmpty() && !isEnd()) {
+        while (shouldLoadMore && items.isNotEmpty() && !isEnd()) {
             onLoadMore()
             // 留一帧给调用方发布新数据或标记列表结束。
-            delay(50)
+            delay(50.milliseconds)
         }
     }
 
@@ -165,11 +168,11 @@ fun <T> PaginatedList(
         if (key != null) {
             val itemKeys = uniquePaginatedListKeys(items, key)
             itemsIndexed(items, key = { index, _ -> itemKeys[index] }) { _, item ->
-                PaginatedListItem(item, itemContent)
+                PaginatedListItem(item, animateItemPlacement, itemContent)
             }
         } else {
             items(items) { item ->
-                PaginatedListItem(item, itemContent)
+                PaginatedListItem(item, animateItemPlacement, itemContent)
             }
         }
 

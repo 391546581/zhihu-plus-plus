@@ -18,7 +18,6 @@
 package com.github.zly2006.zhihu
 
 import android.content.pm.ActivityInfo
-import android.graphics.Bitmap
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,22 +25,23 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -50,6 +50,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
@@ -59,7 +60,6 @@ import androidx.core.content.edit
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
-import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.zly2006.zhihu.filter.ContentOpenFrom
 import com.github.zly2006.zhihu.navigation.Account
@@ -85,10 +85,15 @@ import com.github.zly2006.zhihu.test.setZhihuMainContent
 import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.AndroidArticleNavigationHandoff
+import com.github.zly2006.zhihu.ui.AndroidZhihuMain
 import com.github.zly2006.zhihu.ui.FOLLOW_SCREEN_PAGER_TAG
 import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
 import com.github.zly2006.zhihu.ui.QUESTION_SCREEN_LIST_TAG
 import com.github.zly2006.zhihu.ui.ZhihuMain
+import com.github.zly2006.zhihu.ui.components.LocalPageTurnDispatcher
+import com.github.zly2006.zhihu.ui.components.PageTurnCommand
+import com.github.zly2006.zhihu.ui.components.PageTurnDispatcher
+import com.github.zly2006.zhihu.ui.components.READING_QUEUE_SHEET_TAG
 import com.github.zly2006.zhihu.ui.rememberAndroidZhihuMainPreferenceState
 import com.github.zly2006.zhihu.ui.subscreens.BOTTOM_BAR_ITEMS_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY
@@ -205,18 +210,8 @@ class ZhihuMainNavigationInstrumentedTest {
         composeRule.onNodeWithTag("accountSettings.developer").performScrollTo().performClick()
         composeRule.onNodeWithTag("developerSettings/colorScheme").performScrollTo().performClick()
         composeRule.onNodeWithText("Primary").assertIsDisplayed()
-        composeRule.onRoot().captureToImage().asAndroidBitmap().let { bitmap ->
-            composeRule.activity.openFileOutput("split-settings-child.png", 0).use {
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
-            }
-        }
         composeRule.runOnIdle { composeRule.activity.onBackPressedDispatcher.onBackPressed() }
         composeRule.onNodeWithTag("developerSettings/colorScheme").assertIsDisplayed()
-        composeRule.onRoot().captureToImage().asAndroidBitmap().let { bitmap ->
-            composeRule.activity.openFileOutput("split-settings-return.png", 0).use {
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
-            }
-        }
     }
 
     @Test
@@ -393,6 +388,7 @@ class ZhihuMainNavigationInstrumentedTest {
      * Related tablet request: https://github.com/zly2006/zhihu-plus-plus/issues/680
      * Regression found reviewing: https://github.com/zly2006/zhihu-plus-plus/pull/754
      * 混合听读队列从回答切换到问题时，必须打开问题而不是跳入未注册该路由的详情图。
+     * 关闭队列弹层使用其语义动作，不依赖系统返回键的窗口分发时序。
      */
     @Test
     fun readingQueueCanSwitchFromDetailToQuestion() {
@@ -413,7 +409,13 @@ class ZhihuMainNavigationInstrumentedTest {
             composeRule.runOnIdle { width.value = 400.dp }
             composeRule.onNodeWithTag("reading_player_queue").performTouchInput { click() }
             composeRule.onNodeWithTag("reading_queue_sheet").assertIsDisplayed()
-            Espresso.pressBack()
+            composeRule
+                .onNode(
+                    SemanticsMatcher
+                        .keyIsDefined(SemanticsActions.Dismiss)
+                        .and(hasAnyAncestor(hasTestTag(READING_QUEUE_SHEET_TAG))),
+                    useUnmergedTree = true,
+                ).performSemanticsAction(SemanticsActions.Dismiss)
             composeRule.waitUntil(timeoutMillis = 5_000) {
                 composeRule
                     .onAllNodesWithTag("reading_queue_sheet")
@@ -464,6 +466,49 @@ class ZhihuMainNavigationInstrumentedTest {
         composeRule.waitUntilTabSelected("nav_tab_mycollections")
         composeRule.onNodeWithTag("collection_browse_title").assertIsDisplayed()
         composeRule.onNodeWithTag("collection_screen_title").assertDoesNotExist()
+    }
+
+    /**
+     * Regression: 编程式翻页（Page Down 键、翻页悬浮按钮、音量键翻页）不触发“滚动时自动隐藏底部导航栏”。
+     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/760
+     */
+    @Test
+    fun pageTurnHidesAndRevealsBottomBarWhenAutoHideEnabled() {
+        composeRule.activity
+            .getSharedPreferences(PREFERENCE_NAME, android.content.Context.MODE_PRIVATE)
+            .edit(commit = true) {
+                putString(START_DESTINATION_PREFERENCE_KEY, Home.name)
+                putStringSet(BOTTOM_BAR_ITEMS_PREFERENCE_KEY, deterministicBottomBarItems)
+                putBoolean("duo3_home_account", false)
+                putBoolean("bottomBarTapScrollToTop", false)
+                putBoolean("autoHideBottomBar", true)
+                putBoolean(COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY, false)
+            }
+        val dispatcher = PageTurnDispatcher()
+        composeRule.activity.setContent { }
+        composeRule.waitForIdle()
+        composeRule.activity.setContent {
+            ZhihuTheme {
+                CompositionLocalProvider(LocalPageTurnDispatcher provides dispatcher) {
+                    AndroidZhihuMain(navController = rememberNavController())
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.waitUntilTabSelected("nav_tab_home")
+        composeRule.onNodeWithTag("nav_tab_home").assertIsDisplayed()
+
+        assertTrue(dispatcher.dispatch(PageTurnCommand.PageDown))
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag("nav_tab_home").fetchSemanticsNodes().isEmpty()
+        }
+
+        assertTrue(dispatcher.dispatch(PageTurnCommand.PageUp))
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag("nav_tab_home").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("nav_tab_home").assertIsDisplayed()
     }
 
     private fun MainActivityComposeRule.launchZhihuMain(

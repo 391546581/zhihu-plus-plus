@@ -73,7 +73,9 @@ tasks
 
 mapOf(
     "runKtlintFormatOverAndroidMainSourceSet" to
-        listOf("src/androidMain/kotlin", "src/tiqianMarkdownMain/kotlin"),
+        listOf("src/androidMain/kotlin"),
+    "runKtlintFormatOverAndroidFullSourceSet" to
+        listOf("src/androidFull/kotlin", "src/tiqianMarkdownMain/kotlin"),
     "runKtlintFormatOverJvmMainSourceSet" to listOf("src/jvmMain/kotlin"),
     "runKtlintFormatOverCommonMainSourceSet" to listOf("src/commonMain/kotlin"),
     "runKtlintFormatOverJvmTestSourceSet" to listOf("src/jvmTest/kotlin"),
@@ -123,7 +125,43 @@ kotlin {
     }
     macosArm64()
 
+    applyDefaultHierarchyTemplate()
+
     sourceSets {
+        val androidFull =
+            create("androidFull") {
+                dependsOn(commonMain.get())
+                kotlin.srcDir("src/tiqianMarkdownMain/kotlin")
+                dependencies {
+                    implementation("org.tiqian:markdown-compose:0.1.0-SNAPSHOT")
+                    implementation("org.tiqian:math-font-stix:0.1.0-SNAPSHOT")
+                }
+            }
+        val androidLite =
+            create("androidLite") {
+                dependsOn(commonMain.get())
+            }
+        val androidVariantTaskPattern = Regex("^(?:assemble|bundle|install|test|connected|compile)(Full|Lite)")
+        val requestedAndroidVariants =
+            gradle.startParameter.taskNames
+                .mapNotNull { taskName ->
+                    val task = taskName.substringAfterLast(':')
+                    androidVariantTaskPattern
+                        .find(task)
+                        ?.groupValues
+                        ?.get(1)
+                        ?.lowercase()
+                }
+        val selectedAndroidVariants = requestedAndroidVariants.toSet()
+        require(selectedAndroidVariants.size <= 1) {
+            "Full and Lite Android tasks require separate Gradle invocations"
+        }
+        when (selectedAndroidVariants.singleOrNull()) {
+            "full" -> androidMain.get().dependsOn(androidFull)
+            "lite" -> androidMain.get().dependsOn(androidLite)
+            null -> Unit
+        }
+
         commonMain.dependencies {
             api(project(":shared-local-db"))
             implementation(compose.runtime)
@@ -157,10 +195,7 @@ kotlin {
             implementation("io.ktor:ktor-client-mock:3.5.0")
         }
         androidMain {
-            kotlin.srcDir("src/tiqianMarkdownMain/kotlin")
             dependencies {
-                implementation("org.tiqian:markdown-compose:0.1.0-SNAPSHOT")
-                implementation("org.tiqian:math-font-stix:0.1.0-SNAPSHOT")
                 implementation("androidx.activity:activity-compose:1.13.0")
                 implementation("androidx.browser:browser:1.10.0")
                 implementation("androidx.core:core-ktx:1.19.0")
@@ -176,6 +211,20 @@ kotlin {
                 implementation("org.jsoup:jsoup:1.22.2")
             }
         }
+        // JavaFX POM 使用 ${javafx.platform} classifier，Gradle 不会自动解析，
+        // 需要显式指定平台 classifier 以获取含实际类的 jar（裸 jar 只含空 MANIFEST）。
+        val osName = System.getProperty("os.name").lowercase()
+        val osArch = System.getProperty("os.arch").lowercase()
+        val fxClassifier =
+            when {
+                osName.contains("mac") && (osArch == "aarch64" || osArch == "arm64") -> "mac-aarch64"
+                osName.contains("mac") -> "mac"
+                osName.contains("win") -> "win"
+                osName.contains("linux") && (osArch == "aarch64" || osArch == "arm64") -> "linux-aarch64"
+                else -> "linux"
+            }
+        val javafxModules = listOf("javafx-base", "javafx-graphics", "javafx-controls", "javafx-web", "javafx-swing")
+
         jvmMain {
             kotlin.srcDir("src/tiqianMarkdownMain/kotlin")
         }
@@ -196,30 +245,19 @@ kotlin {
             //              → javafx-media → javafx-graphics
             //   javafx-swing → javafx-graphics
             //   Platform 在 javafx-graphics 中，Scene 也在 javafx-graphics 中
-            // JavaFX POM 使用 ${javafx.platform} classifier，Gradle 不会自动解析，
-            // 需要显式指定平台 classifier 以获取含实际类的 jar（裸 jar 只含空 MANIFEST）。
-            val osName = System.getProperty("os.name").lowercase()
-            val osArch = System.getProperty("os.arch").lowercase()
-            val fxClassifier =
-                when {
-                    osName.contains("mac") && (osArch == "aarch64" || osArch == "arm64") -> "mac-aarch64"
-                    osName.contains("mac") -> "mac"
-                    osName.contains("win") -> "win"
-                    osName.contains("linux") && (osArch == "aarch64" || osArch == "arm64") -> "linux-aarch64"
-                    else -> "linux"
-                }
             // 使用 compileOnly 避免将 JavaFX 传递给依赖 shared 的其他模块
-            compileOnly("org.openjfx:javafx-base:21.0.2:$fxClassifier")
-            compileOnly("org.openjfx:javafx-graphics:21.0.2:$fxClassifier")
-            compileOnly("org.openjfx:javafx-controls:21.0.2:$fxClassifier")
-            compileOnly("org.openjfx:javafx-web:21.0.2:$fxClassifier")
-            compileOnly("org.openjfx:javafx-swing:21.0.2:$fxClassifier")
+            javafxModules.forEach { compileOnly("org.openjfx:$it:21.0.2:$fxClassifier") }
         }
         macosMain.dependencies {
             implementation("io.ktor:ktor-client-darwin:3.5.0")
         }
         jvmTest.dependencies {
+            implementation("org.jetbrains.compose.ui:ui-test:1.11.1")
             implementation("org.jsoup:jsoup:1.22.2")
+            // WebView 回归测试要在真实 JavaFX 运行时上跑；jvmMain 的 compileOnly 不会进入测试运行时。
+            // javafx-web 在类初始化时引用 javafx-media，测试运行时必须显式提供。
+            javafxModules.forEach { implementation("org.openjfx:$it:21.0.2:$fxClassifier") }
+            implementation("org.openjfx:javafx-media:21.0.2:$fxClassifier")
         }
     }
 }

@@ -715,7 +715,7 @@ fun CommentScreen(
                         activeCommentItem == null && viewModel.allData.isEmpty() -> {
                             // activeCommentItem != null 的空态在下面的 LazyColumn 中处理。
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text("暂无评论")
+                                Text(viewModel.commentClosedMessage ?: "暂无评论")
                             }
                         }
 
@@ -1008,7 +1008,8 @@ fun CommentScreen(
                     }
                 }
 
-                // 评论输入框
+                // 作者关闭评论后没有可发送的内容，不再保留输入栏。
+                if (viewModel.commentClosedMessage != null) return@Column
                 Surface(
                     tonalElevation = 2.dp,
                     modifier = Modifier.fillMaxWidth(),
